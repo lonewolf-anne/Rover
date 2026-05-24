@@ -1,185 +1,161 @@
-import random
+import matplotlib
+matplotlib.use('TkAgg') # Forces the windowing system
+import matplotlib.pyplot as plt
+
+
+
 import heapq
-from time import time
-class Environment:
-    def __init__(self, width=50, height=50,obstacle_prob=0.15):
-        self.width = width
-        self.height = height
-        self.obstacle_prob = obstacle_prob
-        self.grid=self.generate_grid()
-        self.start=(0,0)
-        self.goal=(width-1,height-1)
-        
-        self.grid[0][0]=0  # Ensure start is not an obstacle
-        self.grid[height-1][width-1]=0  # Ensure goal is not an obstacle
-    def generate_grid(self):
-        grid = []
-        for y in range(self.height):
-            row = []
-            for x in range(self.width):
-                if random.random() < self.obstacle_prob:
-                    row.append(-1)  # -1 is an obstacle
-                else:
-                    terrain=random.choice([0, 1, 2])  # 0: smooth , 1: rocky, 2: rough
-                    row.append(terrain)
-            grid.append(row)
-        return grid
-    
-    def is_within_bounds(self, x, y):
-        return 0 <= x < self.width and 0 <= y < self.height
-    
-    def is_obstacle(self, x, y):
-        return self.grid[y][x] == -1
-    def get_cost(self, x, y):
-        terrain =self.grid[y][x]
-        if terrain==-1:
-            return float('inf')  # Impassable
-        energy={0:1,1:3,2:6}[terrain]  # Energy cost based on terrain type
-        risk={0:1,1:4,2:9}[terrain]  # Risk of tipping cost based on terrain type
-        energy_weight=0.5
-        risk_weight=0.5
-        return energy_weight*energy + risk_weight*risk
-    #rules -never tip,never die with data onboard
-    
-    def get_neighbors(self, x,y):
-                                                                         
-        neighbors = [
-            (x-1, y), #left  
-            (x+1, y), #right
-            (x, y-1), #up
-            (x, y+1) #down
-        ]
-        valid_neighbors = []
-        for nx,ny in neighbors:
-            if self.is_within_bounds(nx, ny) and not self.is_obstacle(nx, ny):
-                valid_neighbors.append((nx, ny))
-        
-        return valid_neighbors
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+#random.seed(42)  # Set a seed for reproducibility
+# WIDTH=x  |    HEIGHT=y
+#with=how far left to right
+#height=how far up and down
 
- 
- 
-def dijkstra(env):
-    start=env.start
-    goal=env.goal
-    #priority qeue
-    queue= []
-    heapq.heappush(queue,(0,start))
-#tracking best cost to each node
-    costs={start:0}
+#Python always goes row before column,meaning [y][x] instead of [x][y]
+#but on normal graph it's x,y and x=row and y=column
+class roverGrid:
+    def __init__(self,width,height):
+        self.width=width
+        self.height=height
+        self.costs=[[random.randint(1,5)for _ in range(width)] for _ in range(height)] 
+        #This creates a 2D list (matrix) of random costs between 1 and 5 for each cell in the grid.
+    def in_bounds(self,pos):    #this prevents the rover from going out of bounds of the grid
+        x,y=pos
+        return 0<=x<self.width and 0<=y<self.height
+    def get_neighbors(self,pos):
+        x,y=pos
+        #up,-y
+        # down,+y
+        # left,-x
+        # right,+x
+        neighbors_result=[(x,y-1),
+                          (x,y+1),
+                          (x-1,y),
+                          (x+1,y)]
+        return [pos for pos in neighbors_result if self.in_bounds(pos)]
     
-    #tracking the path
-    came_from={start:None}
+    def get_cost(self,pos):
+        x,y=pos
+        #unpacked because python understands the grid from indexing as [y][x] not tuples how we defined it as (x,y) in the pos tuple, so we have to unpack it to access the correct cost from the costs matrix.
+        return self.costs[y][x]  #because of the way we defined the grid, we access it as [y][x]
+def heuristic(a,b):
+    #Unppack point a(current node) and point b(goal node)
+    x1,y1=a
+    x2,y2=b
+    #Calculate the Manhattan distance between the two points, which is the sum of the absolute differences of their coordinates.
+    return abs(x1-x2)+abs(y1-y2)
+
+def a_star_search(grid,start,goal):
+    frontier=[] # this is the to-do list of nodes to explore, we will use a priority queue (min-heap) to always expand the node with the lowest cost first.
+    start_priority=0+heuristic(start,goal) # the priority of the starting node is just the heuristic cost to the goal since we haven't moved yet.
+    heapq.heappush(frontier,(start_priority,start)) # we push the starting node onto the frontier with its priority.
     
-    while queue:
-        current_cost,current=heapq.heappop(queue)
-        x,y = current
-        if current== goal:
+    came_from={start: None}
+    cost_so_far={start: 0}
+    
+    while frontier:
+        current_cost,current_node=heapq.heappop(frontier)
+        if current_node==goal:
             break
-        
-        for  nx ,ny in env.get_neighbors(x,y):
-            new_cost=current_cost + env.get_cost(nx, ny)
-            if (nx,ny) not in costs or new_cost < costs[(nx,ny)]:
-                costs[(nx,ny)]=new_cost
-                came_from[(nx,ny)]=current
-                heapq.heappush(queue,(new_cost,(nx,ny)))
-                
-    #reconstruct path
-    path =[]
-    node=goal
-    while node is not None:
-        path.append(node)
-        node=came_from[node]
-    path.reverse()  
-    return path, costs.get(goal, float('inf'))
-
-
-env = Environment()
-path, total_cost = dijkstra(env)
-
-print("Path length:", len(path))
-print("Total cost:", total_cost)
-print("Path:", path)
-
-def path_to_directions(path):
-    directions = []
-    for i in range(1, len(path)):  
-        x1, y1=path[i-1]
-        x2, y2=path[i]
-        dr =y2-y1
-        dc=x2-x1
-        if dr ==1 and dc==0:
-            directions.append("DOWN")
-        elif dr==-1 and dc==0:
-            directions.append("UP")
-        elif dr==0 and dc==1:
-            directions.append("RIGHT")
-        elif dr==0 and dc==-1:
-            directions.append("LEFT")
-        else:
-            directions.append(f"DIAGONAL({dr},{dc})")  # Should not happen in a grid with 4-connectivit
+        for next_node in grid.get_neighbors(current_node):
+            new_cost=cost_so_far[current_node]+grid.get_cost(next_node)
             
-    return directions
-directions = path_to_directions(path)
-print("Directions:", directions)
+            
+            if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
+                cost_so_far[next_node]=new_cost
+                
+                
+                
+                priority=new_cost+heuristic(next_node,goal) # the priority is the actual cost to reach the node plus the heuristic cost to the goal.
+                heapq.heappush(frontier,(priority, next_node))
+                
+                came_from[next_node]=current_node
+    return came_from,cost_so_far
 
 
-#Visualization
-def visualize_path(env, path):
-    grid_display=[]
-    for y in range(env.height):
-        row=""
-        for x in range(env.width):
-            if(x,y)==env.start:
-                row+="S"
-                
-            elif(x,y)==env.goal:
-                row+="G"
-            elif (x,y) in path:
-                row+="*"
-            elif env.grid[y][x]==-1:
-                row+="O"
-            else:
-                row+="."
-        grid_display.append(row)
-    for r in grid_display:
-        print(r)
-        
-def slow_down(cost):
-    if cost >5:
-        return 0.5  # Slow down for high-cost terrain
-    else:
-        return 1.0  # Normal speed for low-cost terrain
 
-class Rover:
-    def __init__(self,env):  #the rover needs to access the environment
-        self.env=env
-        self.position = env.start
-        self.energy=100
-        self.speed=20  #m/s
-        self.data=[]
-        pass
-    def move_to(self,x,y):
-        cost=self.env.get_cost(x,y)
-        if cost==float('inf'):
-            print(f"Cannot move to {x},{y} - obstacle")
-            return False
-        energy_cost=cost*0.5  # Energy cost is half of the total cost
-        if self.energy < energy_cost:
-            print(f"Not enough energy to move to {x},{y}")
-            return False
-        self.energy -= energy_cost
-        self.position=(x,y)
-        print(f"Rover moved to {x},{y} | remaining energy: {self.energy}")
-        return True
-rover=Rover(env)
-for step in path:
-        x,y=step
-        rover.move_to(x,y)
-        cost=env.get_cost(x,y)
-        #speed_factor=slow_down(cost)
-        #print(f"Rover moves to {x},{y}| cost={cost}| speed factor={speed_factor}")
-                
-visualize_path(env, path)
-                
+#first algorithm Dijkstra's algorithm
+# we are going to put this outside the class because to seperate the concerns of the grid and the pathfinding algorithm, we want to be able to use the same algorithm on different types of grids or environments in the future without having to modify the grid class itself.
+def dijkstra_search(grid,start,goal):
+    frontier=[] # this is the to-do list of nodes to explore, we will use a priority queue (min-heap) to always expand the node with the lowest cost first.
+    heapq.heappush(frontier,(0,start)) # we push the starting node onto the frontier with a cost of 0.
     
-   
+    came_from={start: None} # this dictionary will keep track of the path we took to reach each node, we initialize it with the starting node having no parent (None).
+    cost_so_far={start: 0}  #this is the ledger that keeps the values of the cost to reach each node, we initialize it with the starting node having a cost of 0.
+    
+    while frontier:
+        current_cost,current_node=heapq.heappop(frontier) # we pop the node with the lowest cost from the frontier, this will be our current node to explore.
+        #node=coordinate
+        if current_node==goal: # if we have reached the goal, we can stop the search.
+            break
+        #expansion phase
+        for next_node in grid.get_neighbors(current_node):
+            #this picks up the 1st turple in get.neighbors and assigns it to next_node, then it picks up the 2nd tuple and assigns it to next_node and so on until it has gone through all the neighbors of the current node.
+            new_cost=cost_so_far[current_node]+grid.get_cost(next_node)
+            if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
+                cost_so_far[next_node]=new_cost
+                heapq.heappush(frontier,(new_cost, next_node))
+                came_from[next_node]=current_node
+    return came_from,cost_so_far
+       
+    #reconstructing the path from the goal back to the start using the came_from dictionary
+def reconstruct_path(came_from,start,goal):
+    current=goal  #we are currently at the goal 
+    path=[]       # the notebook for keeping track of our backward movements
+    while current != start:   #Keep goignt untill we reach the strat(0,0)
+        path.append(current)    #write where you are currently at in the path notebook
+        current=came_from[current]
+    path.append(start)
+    path.reverse() #reverse the path to get it from start to goal instead of goal to start
+    return path
+
+#Now we test but we have to ccreate our parameters for the grid and the start and goal nodes first.
+width,height=20,20
+start_node=(0,0)
+goal_node=(19,19)
+
+#Create the rocer's world
+#this runs the __init_ method of the roverGrid class, which creates a grid with random costs for each cell.
+my_map=roverGrid(width,height)
+
+#Launch the search algorithm 
+#this returns two dictionaries, "parents" and "costs"
+parents, cost_ledger =a_star_search(my_map,start_node,goal_node)
+
+
+#Check if we actually found the goal
+if goal_node in parents:
+    final_path=reconstruct_path(parents,start_node,goal_node)
+    
+    print("Mission Accomplished! Path found:")
+    print(f'Total Waypoints: {len(final_path)}')
+    print(f'Total (Cost) Spent: {cost_ledger[goal_node]}')
+    print(f'The path:{final_path}')
+else:
+    print("Mission Failed! No path found to the goal.") 
+    
+
+def visualize_grid(grid,final_path=None):
+    #first dispaly the grid(costs)
+    plt.imshow(grid.costs,cmap='terrain', origin='upper')
+    
+    #overlay the path
+    if final_path:
+        #extract x and y coordinates, from your lists of (x,y)
+        x_coords=[p[0] for p in final_path]
+        y_coords=[p[1] for p in final_path]
+        plt.plot(x_coords,y_coords,color='cyan',linewidth=2,label='Rover Path')
+        
+    plt.colorbar(label='Terrain Cost(1=smooth, 5=rocky)')
+    plt.title('Autonomous Rover Pathfinding')
+    plt.xlabel('X coordinate')
+    plt.ylabel('Y coordinate')
+    plt.legend()
+    plt.show()
+visualize_grid(my_map,final_path)
+
+
+
+
